@@ -1,0 +1,9 @@
+html[data-theme="dark"] {
+  --surface: #0b0c0f;
+  --surface-2: #111318;
+  --text: #e6e8ee;
+  --text-muted: #9aa3b2;
+  --border: #262a33;
+  --primary: #4f8cff;
+}
+

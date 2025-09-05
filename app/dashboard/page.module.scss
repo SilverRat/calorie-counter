@@ -1,0 +1,27 @@
+.grid {
+  display: grid;
+  gap: var(--space-4);
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 481px) {
+  .grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1025px) {
+  .grid { grid-template-columns: repeat(3, 1fr); }
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2);
+  padding: var(--space-4);
+  box-shadow: var(--shadow-1);
+}
+
+.big { font-size: 2rem; font-weight: 700; }
+.muted { color: var(--text-muted); }
+
+.chartBox { position: relative; height: 220px; margin-top: var(--space-2); }
+@media (min-width: 768px) { .chartBox { height: 260px; } }
+@media (min-width: 1025px) { .chartBox { height: 280px; } }

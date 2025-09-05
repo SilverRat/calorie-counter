@@ -1,0 +1,27 @@
+:root {
+  /* Spacing */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+
+  /* Radius */
+  --radius-1: 6px;
+  --radius-2: 10px;
+
+  /* Colors (semantic) */
+  --surface: #0b0c0f;
+  --surface-2: #111318;
+  --text: #e6e8ee;
+  --text-muted: #9aa3b2;
+  --border: #262a33;
+  --primary: #4f8cff;
+  --success: #2ecc71;
+  --warn: #f1c40f;
+  --error: #e74c3c;
+
+  /* Shadows */
+  --shadow-1: 0 1px 2px rgba(0,0,0,0.2);
+}
+

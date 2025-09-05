@@ -1,0 +1,9 @@
+html[data-theme="light"] {
+  --surface: #ffffff;
+  --surface-2: #f7f8fa;
+  --text: #1b2130;
+  --text-muted: #616a7a;
+  --border: #e4e7ee;
+  --primary: #2563eb;
+}
+
