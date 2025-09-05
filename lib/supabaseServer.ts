@@ -1,12 +1,12 @@
 import { cookies } from 'next/headers'
 import { createServerClient } from '@supabase/ssr'
-import type { SupabaseClient } from '@supabase/supabase-js'
 
-export function getSupabaseServer(): SupabaseClient {
+export function getSupabaseServer() {
   const cookieStore = cookies()
   const url = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!url || !anon) throw new Error('Supabase URL/Anon key missing')
+  // Cast to any to avoid schema generic mismatch across library versions during build
   return createServerClient(url, anon, {
     cookies: {
       get(name: string) {
@@ -19,6 +19,5 @@ export function getSupabaseServer(): SupabaseClient {
         cookieStore.set({ name, value: '', ...options })
       }
     }
-  })
+  }) as any
 }
-
