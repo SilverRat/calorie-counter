@@ -31,6 +31,21 @@ export const updateEntrySchema = z.object({
   notes: z.string().max(500).optional()
 }).refine(obj => Object.keys(obj).length > 0, { message: 'No fields to update' })
 
+// Tool schema for update_food_entry: includes id and nested fields
+export const updateEntryToolSchema = z.object({
+  id: z.string().uuid(),
+  fields: z.object({
+    occurred_at: datetimeWithTz.optional(),
+    meal_type: mealType.optional(),
+    item_name: z.string().min(1).max(160).optional(),
+    calories: z.number().int().min(0).max(5000).optional(),
+    protein: z.number().int().min(0).max(500).optional(),
+    carbs: z.number().int().min(0).max(1000).optional(),
+    fat: z.number().int().min(0).max(500).optional(),
+    notes: z.string().max(500).optional()
+  }).refine(obj => Object.keys(obj).length > 0, { message: 'No fields to update' })
+})
+
 export const rangeSchema = z.object({
   from: z.string().datetime().optional(),
   to: z.string().datetime().optional()

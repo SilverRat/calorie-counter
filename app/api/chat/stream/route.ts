@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server'
 import { getSupabaseServer } from '@/lib/supabaseServer'
-import { addEntrySchema, rangeSchema, updateEntrySchema } from '@/lib/validation'
+import { addEntrySchema, rangeSchema, updateEntryToolSchema } from '@/lib/validation'
 
 export const runtime = 'edge'
 
@@ -334,7 +334,7 @@ export async function POST(req: NextRequest) {
                 await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'tool', content: '', tool_name: name, tool_args_json: parsed.data, tool_result_json: result })
               }
             } else if (name === 'update_food_entry') {
-              const parsed = updateEntrySchema.safeParse(args)
+              const parsed = updateEntryToolSchema.safeParse(args)
               if (!parsed.success) { result = { error: 'invalid_args', details: parsed.error.flatten() } }
               else {
                 const { error: uErr } = await supabase.from('food_entries').update(parsed.data.fields).eq('id', parsed.data.id).eq('user_id', user.id)
