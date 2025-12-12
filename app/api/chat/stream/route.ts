@@ -225,6 +225,14 @@ export async function POST(req: NextRequest) {
         }).select('id, created_at').single()
         if (umErr) throw new Error(umErr.message)
 
+        // Fetch brief history (prior to this user message) to maintain context for confirmations
+        const { data: historyRows } = await supabase.from('chat_messages')
+          .select('role, content, created_at')
+          .eq('session_id', sessionId)
+          .lt('created_at', umsg.created_at)
+          .order('created_at', { ascending: true })
+          .limit(20)
+
         // Build system prompt
         const activePrompt = await getActivePrompt(supabase)
         const nowUtc = new Date()
@@ -249,7 +257,7 @@ export async function POST(req: NextRequest) {
           today_user_date: todayUserDate
         }) : 'You are a calorie-tracking assistant.'
 
-        // Build OpenAI messages
+        // Build OpenAI messages with short history to preserve context for confirmations
         const userParts: any[] = []
         if (text) userParts.push({ type: 'text', text })
         for (const f of files.slice(0, 2)) {
@@ -260,22 +268,28 @@ export async function POST(req: NextRequest) {
           userParts.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } })
         }
 
+        const historyMessages = (historyRows || []).map(h => ({
+          role: h.role === 'assistant' ? 'assistant' : 'user',
+          content: h.content || ''
+        }))
+
         const messages: any[] = [
           { role: 'system', content: systemText },
+          ...historyMessages,
           { role: 'user', content: userParts.length ? userParts : text }
         ]
 
         const apiKey = process.env.OPENAI_API_KEY
         if (!apiKey) { out.error('llm_not_configured', 'OPENAI_API_KEY not set'); out.done({ finish_reason: 'error' }); controller.close(); return }
 
-        // First call: allow tool calls
+        // First call: only allow tools when the user explicitly confirms saving
         const tools = openAiToolSchemas()
         const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-        const forceTool = files.length > 0 || /\b(log|add|save|record|track)\b/i.test(text) || /\b(kcal|calorie|calories|\d{2,4})\b/i.test(text)
+        const allowTools = /\b(save|log it|add it|record it|confirm(ed)?|looks good|ok(ay)?|yes)\b/i.test(text)
         const r1 = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model, messages, tools, tool_choice: forceTool ? 'required' : 'auto' })
+          body: JSON.stringify({ model, messages, tools, tool_choice: allowTools ? 'auto' : 'none' })
         })
         if (!r1.ok) {
           const err = await r1.text()
