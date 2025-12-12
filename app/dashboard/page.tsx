@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { ensureChartRegistered } from "@/lib/chart";
 import { Line, Doughnut } from "react-chartjs-2";
 import { useQuery } from "@tanstack/react-query";
-import QuickAdd from "./QuickAdd";
 
 type SeriesPoint = { date: string; calories: number };
 
@@ -42,7 +41,7 @@ export default function DashboardPage() {
     <section className={styles.grid}>
       <div className={styles.card}>
         <h2>Today</h2>
-        <p className={styles.big}>{todayTotal ?? "—"} kcal</p>
+        <p className={styles.big}>{todayTotal ?? "--"} kcal</p>
         <div className={styles.chartBox}>
           {todayMacros && (todayMacros.protein + todayMacros.carbs + todayMacros.fat > 0) ? (
             <Doughnut
@@ -66,11 +65,10 @@ export default function DashboardPage() {
           )}
         </div>
       </div>
-      <QuickAdd />
       <div className={styles.card}>
         <h2>Last 7 Days</h2>
         <p className={styles.big}>
-          {last7 ? `${last7.reduce((sum, p) => sum + (p.calories || 0), 0)}` : "—"} kcal
+          {last7 ? `${last7.reduce((sum, p) => sum + (p.calories || 0), 0)}` : "--"} kcal
         </p>
         <p className={styles.muted}>{last7 ? `${last7.length} days` : ""}</p>
         <div className={styles.chartBox}>
@@ -104,7 +102,7 @@ export default function DashboardPage() {
       <div className={styles.card}>
         <h2>Last 30 Days</h2>
         <p className={styles.big}>
-          {last30 ? `${last30.reduce((sum, p) => sum + (p.calories || 0), 0)}` : "—"} kcal
+          {last30 ? `${last30.reduce((sum, p) => sum + (p.calories || 0), 0)}` : "--"} kcal
         </p>
         <p className={styles.muted}>{last30 ? `${last30.length} days` : ""}</p>
         <div className={styles.chartBox}>
