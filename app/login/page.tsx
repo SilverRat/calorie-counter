@@ -7,18 +7,17 @@ import { useRouter } from 'next/navigation'
 import styles from './page.module.scss'
 
 export default function LoginPage() {
-  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowser> | null>(null)
-  const router = useRouter()
-  const [ready, setReady] = useState(false)
-
-  useEffect(() => {
+  const [supabase] = useState<ReturnType<typeof getSupabaseBrowser> | null>(() => {
+    if (typeof window === 'undefined') return null
     try {
-      setSupabase(getSupabaseBrowser())
+      return getSupabaseBrowser()
     } catch (err) {
       console.error(err)
-      return
+      return null
     }
-  }, [])
+  })
+  const router = useRouter()
+  const [ready, setReady] = useState(false)
 
   useEffect(() => {
     if (!supabase) return
