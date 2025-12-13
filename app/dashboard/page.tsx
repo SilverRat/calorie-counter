@@ -1,6 +1,5 @@
 "use client";
 import styles from "./page.module.scss";
-import { useEffect, useState } from "react";
 import { ensureChartRegistered } from "@/lib/chart";
 import { Line, Doughnut } from "react-chartjs-2";
 import { useQuery } from "@tanstack/react-query";
@@ -9,10 +8,6 @@ type SeriesPoint = { date: string; calories: number };
 
 export default function DashboardPage() {
   ensureChartRegistered();
-  const [todayTotal, setTodayTotal] = useState<number | null>(null);
-  const [todayMacros, setTodayMacros] = useState<{ protein: number; carbs: number; fat: number } | null>(null);
-  const [last7, setLast7] = useState<SeriesPoint[] | null>(null);
-  const [last30, setLast30] = useState<SeriesPoint[] | null>(null);
 
   const { data, refetch } = useQuery({
     queryKey: ["dashboardSummary"],
@@ -23,19 +18,16 @@ export default function DashboardPage() {
     }
   });
 
-  useEffect(() => {
-    if (!data) return;
-    setTodayTotal(data?.today?.totals?.calories ?? null);
-    if (data?.today?.totals) {
-      setTodayMacros({
+  const todayTotal = data?.today?.totals?.calories ?? null;
+  const todayMacros = data?.today?.totals
+    ? {
         protein: data.today.totals.protein || 0,
         carbs: data.today.totals.carbs || 0,
         fat: data.today.totals.fat || 0
-      });
-    }
-    setLast7(data?.last7d ?? null);
-    setLast30(data?.last30d ?? null);
-  }, [data]);
+      }
+    : null;
+  const last7 = data?.last7d ?? null;
+  const last30 = data?.last30d ?? null;
 
   return (
     <section className={styles.grid}>

@@ -1,8 +1,11 @@
 import nextConfig from 'eslint-config-next';
 
-export default [
+const config = [
   {
     ignores: ['.next/**', 'node_modules/**'],
   },
-  ...nextConfig(),
+  // nextConfig already exports an array for flat config; spread it directly
+  ...nextConfig,
 ];
+
+export default config;
