@@ -2,16 +2,26 @@
 import { Auth } from '@supabase/auth-ui-react'
 import { ThemeSupa } from '@supabase/auth-ui-shared'
 import { getSupabaseBrowser } from '@/lib/supabaseBrowser'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './page.module.scss'
 
 export default function LoginPage() {
-  const supabase = useMemo(() => getSupabaseBrowser(), [])
+  const [supabase, setSupabase] = useState<ReturnType<typeof getSupabaseBrowser> | null>(null)
   const router = useRouter()
   const [ready, setReady] = useState(false)
 
   useEffect(() => {
+    try {
+      setSupabase(getSupabaseBrowser())
+    } catch (err) {
+      console.error(err)
+      return
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!supabase) return
     let active = true
 
     // Clear any stale session on page load to avoid accidental auto-login
@@ -37,7 +47,7 @@ export default function LoginPage() {
   return (
     <section className={styles.wrap}>
       <h1>Sign in</h1>
-      {ready ? (
+      {supabase && ready ? (
         <Auth
           supabaseClient={supabase}
           appearance={{ theme: ThemeSupa }}
