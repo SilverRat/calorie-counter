@@ -268,7 +268,7 @@ export async function POST(req: NextRequest) {
           userParts.push({ type: 'image_url', image_url: { url: `data:${mime};base64,${b64}` } })
         }
 
-        const historyMessages = (historyRows || []).map(h => ({
+        const historyMessages = (historyRows || []).map((h: { role: string; content?: string }) => ({
           role: h.role === 'assistant' ? 'assistant' : 'user',
           content: h.content || ''
         }))

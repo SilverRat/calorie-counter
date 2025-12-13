@@ -9,14 +9,17 @@ export function getSupabaseServer() {
   // Cast to any to avoid schema generic mismatch across library versions during build
   return createServerClient(url, anon, {
     cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
+      async get(name: string) {
+        const store = await cookieStore
+        return store.get(name)?.value
       },
-      set(name: string, value: string, options: any) {
-        cookieStore.set({ name, value, ...options })
+      async set(name: string, value: string, options: any) {
+        const store = await cookieStore
+        store.set({ name, value, ...options })
       },
-      remove(name: string, options: any) {
-        cookieStore.set({ name, value: '', ...options })
+      async remove(name: string, options: any) {
+        const store = await cookieStore
+        store.set({ name, value: '', ...options })
       }
     }
   }) as any
