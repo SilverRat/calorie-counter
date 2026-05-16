@@ -1,15 +1,8 @@
-import { NextResponse } from 'next/server'
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { getCurrentUser } from '@/lib/session'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function GET() {
-  const supabase = getSupabaseServer()
-  const { data: userData } = await supabase.auth.getUser()
-  const { data: sessionData } = await supabase.auth.getSession()
-  return NextResponse.json({
-    user: userData.user ? { id: userData.user.id, email: userData.user.email } : null,
-    hasSession: !!sessionData.session,
-  })
+  const user = await getCurrentUser()
+  return Response.json({ user, hasSession: !!user })
 }
-

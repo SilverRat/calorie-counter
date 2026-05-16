@@ -1,31 +1,52 @@
 import { NextRequest } from 'next/server'
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { execute, mysqlDate } from '@/lib/mysql'
+import { getCurrentUser } from '@/lib/session'
 import { updateEntrySchema } from '@/lib/validation'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
+
+const columnMap: Record<string, string> = {
+  occurred_at: 'occurred_at',
+  meal_type: 'meal_type',
+  item_name: 'item_name',
+  calories: 'calories',
+  protein: 'protein',
+  carbs: 'carbs',
+  fat: 'fat',
+  notes: 'notes'
+}
 
 export async function PATCH(req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
-  const supabase = getSupabaseServer()
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData.user?.id
-  if (!userId) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
-  let body: unknown
-  try { body = await req.json() } catch { return new Response(JSON.stringify({ error: 'invalid_json' }), { status: 400 }) }
+  const user = await getCurrentUser()
+  if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
+
+  const body = await req.json().catch(() => null)
   const parsed = updateEntrySchema.safeParse(body)
-  if (!parsed.success) return new Response(JSON.stringify({ error: parsed.error.flatten() }), { status: 400 })
-  const { error } = await supabase.from('food_entries').update(parsed.data).eq('id', id).eq('user_id', userId)
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 })
-  return new Response(JSON.stringify({ updated: true }), { status: 200, headers: { 'content-type': 'application/json' } })
+  if (!parsed.success) return Response.json({ error: parsed.error.flatten() }, { status: 400 })
+
+  const sets: string[] = []
+  const params: unknown[] = []
+  for (const [key, value] of Object.entries(parsed.data)) {
+    const column = columnMap[key]
+    if (!column) continue
+    sets.push(`${column} = ?`)
+    params.push(key === 'occurred_at' && typeof value === 'string' ? mysqlDate(value) : value)
+  }
+  params.push(id, user.id)
+
+  const result = await execute(
+    `update food_entries set ${sets.join(', ')} where id = ? and user_id = ?`,
+    params
+  )
+  return Response.json({ updated: result.affectedRows > 0 })
 }
 
-export async function DELETE(req: NextRequest, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(_req: NextRequest, context: { params: Promise<{ id: string }> }) {
   const { id } = await context.params
-  const supabase = getSupabaseServer()
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData.user?.id
-  if (!userId) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
-  const { error } = await supabase.from('food_entries').delete().eq('id', id).eq('user_id', userId)
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  const user = await getCurrentUser()
+  if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
+
+  await execute('delete from food_entries where id = ? and user_id = ?', [id, user.id])
   return new Response(null, { status: 204 })
 }

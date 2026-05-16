@@ -4,7 +4,6 @@ import "@/styles/theme-dark.css";
 import "./globals.scss";
 import { ReactNode } from "react";
 import HeaderAuth from "./_parts/header-auth";
-import AuthListener from "./_parts/auth-listener";
 import ClientProviders from "./_providers/client-providers";
 
 export const metadata = {
@@ -19,7 +18,6 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="en" data-theme="light">
       <body>
-        <AuthListener />
         <ClientProviders>
           <header className="appHeader">
             <div className="brand">Calorie Counter</div>

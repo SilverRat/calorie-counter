@@ -10,11 +10,8 @@
     "lint": "eslint . --ext .js,.jsx,.ts,.tsx"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.45.3",
-    "@supabase/ssr": "^0.4.1",
-    "@supabase/auth-ui-react": "^0.4.7",
-    "@supabase/auth-ui-shared": "^0.1.7",
     "chart.js": "^4.4.4",
+    "mysql2": "^3.15.3",
     "next": "^16.0.10",
     "react": "^19.2.3",
     "react-chartjs-2": "^5.2.0",

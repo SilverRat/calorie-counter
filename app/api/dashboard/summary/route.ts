@@ -1,37 +1,40 @@
-import { NextRequest } from 'next/server'
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { mysqlDate, query, type DbRow } from '@/lib/mysql'
+import { getCurrentUser } from '@/lib/session'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
+
+interface SummaryRow extends DbRow {
+  occurred_at: Date
+  calories: number
+  protein: number | null
+  carbs: number | null
+  fat: number | null
+  meal_type: string
+}
 
 function startOfDay(date: Date) { const d = new Date(date); d.setHours(0,0,0,0); return d }
-function toISO(d: Date) { return new Date(d).toISOString() }
 
-export async function GET(req: NextRequest) {
-  const supabase = getSupabaseServer()
-  const { data: userData } = await supabase.auth.getUser()
-  const userId = userData.user?.id
-  if (!userId) return new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401 })
+export async function GET() {
+  const user = await getCurrentUser()
+  if (!user) return Response.json({ error: 'unauthorized' }, { status: 401 })
 
   const now = new Date()
   const todayStart = startOfDay(now)
-  const d7 = new Date(now); d7.setDate(now.getDate() - 6); const last7Start = startOfDay(d7) // include today => 7 days
   const d30 = new Date(now); d30.setDate(now.getDate() - 29); const last30Start = startOfDay(d30)
 
-  const { data, error } = await supabase
-    .from('food_entries')
-    .select('occurred_at, calories, protein, carbs, fat, meal_type')
-    .eq('user_id', userId)
-    .gte('occurred_at', toISO(last30Start))
-    .lte('occurred_at', toISO(now))
-    .order('occurred_at', { ascending: true })
-
-  if (error) return new Response(JSON.stringify({ error: error.message }), { status: 500 })
+  const data = await query<SummaryRow[]>(
+    `select occurred_at, calories, protein, carbs, fat, meal_type
+     from food_entries
+     where user_id = ? and occurred_at >= ? and occurred_at <= ?
+     order by occurred_at asc`,
+    [user.id, mysqlDate(last30Start), mysqlDate(now)]
+  )
 
   const today = { totals: { calories: 0, protein: 0, carbs: 0, fat: 0 }, byMeal: [] as { meal_type: string; calories: number }[] }
   const byDay = new Map<string, number>()
   const byDayMacros = new Map<string, { protein: number; carbs: number; fat: number }>()
 
-  for (const row of data || []) {
+  for (const row of data) {
     const dt = new Date(row.occurred_at)
     const key = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate()).toISOString()
     byDay.set(key, (byDay.get(key) || 0) + (row.calories || 0))
@@ -48,7 +51,6 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Fill last 7 and last 30 series (daily calories)
   const series = (days: number) => {
     const arr: { date: string; calories: number }[] = []
     const start = new Date(now); start.setDate(now.getDate() - (days - 1))
@@ -60,11 +62,5 @@ export async function GET(req: NextRequest) {
     return arr
   }
 
-  const payload = {
-    today,
-    last7d: series(7),
-    last30d: series(30)
-  }
-
-  return new Response(JSON.stringify(payload), { status: 200, headers: { 'content-type': 'application/json' } })
+  return Response.json({ today, last7d: series(7), last30d: series(30) })
 }

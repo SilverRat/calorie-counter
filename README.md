@@ -1,49 +1,62 @@
-# Calorie Counter (Next.js + Supabase)
+# Calorie Counter (Next.js + MySQL)
 
-Production-ready scaffold for a chat-centric calorie tracker with a Dashboard and Chat. API is implemented as Next.js Route Handlers (Edge where streaming fits). No image persistence.
+Chat-centric calorie tracker with a Dashboard and Chat. API routes are implemented as Next.js Route Handlers and persist data in MySQL or MariaDB.
 
 ## Stack
-- Next.js (App Router) on Vercel
-- Supabase (Postgres + Auth + RLS)
+- Next.js App Router
+- MySQL or MariaDB via `mysql2`
+- App-owned email/password auth with signed HTTP-only cookies
 - Chart.js via react-chartjs-2
-- SCSS + CSS Modules, CSS variables for theming
+- SCSS + CSS Modules
 
 ## Quick Start
-1) Install deps
+1. Install deps
    - `npm install`
 
-2) Env vars
-   - Copy `.env.example` → `.env.local`, fill in:
-     - `NEXT_PUBLIC_SUPABASE_URL`
-     - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-     - Server: `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `OPENAI_API_KEY`
-     - Dev helper: `DEV_USER_ID` (a valid Supabase Auth user UUID)
+2. Create the database
+   - In cPanel, use **Databases > MySQL Database Wizard** or **Databases > MySQL Databases**.
+   - Create a database and database user.
+   - Add the user to the database with **ALL PRIVILEGES** for the initial migration.
+   - Import `db/mysql/schema.sql`, then optionally import `db/mysql/seed.sql`.
 
-3) Supabase schema
-   - Apply SQL from `supabase/migrations/0001_init.sql` to your Supabase project.
-   - Seed Prompt v1 using `supabase/seeds/000_prompt.sql` (optional; or add via dashboard).
+3. Env vars
+   - Copy `.env.example` to `.env.local`.
+   - Fill `MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_DATABASE`, `MYSQL_USER`, `MYSQL_PASSWORD`.
+   - Set `SESSION_SECRET` to a random value at least 32 characters long.
+   - Set `OPENAI_API_KEY` for chat image/text analysis.
 
-4) Run
-   - `npm run dev` then open http://localhost:3000
+4. Run
+   - `npm run dev`
+   - Open http://localhost:3000
 
-5) Auth
-   - Visit `/login` and sign in (email/password). Supabase Auth cookies will be set and refreshed by `middleware.ts`.
-   - After signing in, `/dashboard` and `/test` will show your data (RLS enforced).
+5. Auth
+   - Visit `/login`.
+   - Create an account with email/password.
+   - User data is scoped in every query by the signed session user id.
+
+## MySQL Import
+Use phpMyAdmin in cPanel:
+
+1. Open **phpMyAdmin**.
+2. Select the new database.
+3. Use **Import** to run `db/mysql/schema.sql`.
+4. Import `db/mysql/seed.sql` if you want the default active chat prompt.
+
+For production, keep the app user limited to this one database. It needs normal table privileges for runtime reads/writes. You can remove broad DBA-style privileges after schema creation if your host allows editing privileges.
 
 ## Routes
-- UI
-  - `/dashboard` basic placeholders for Today/7d/30d
-  - `/chat` chat stub with file picker and message box
-- API (stubs)
-  - `GET /api/health` → `{ ok: true }`
+- UI: `/dashboard`, `/chat`, `/test`, `/login`
+- API:
+  - `GET /api/health`
   - `GET,POST /api/entries`
   - `PATCH,DELETE /api/entries/:id`
   - `GET /api/dashboard/summary`
-  - `POST /api/chat/stream` (SSE stub)
-  - `GET,POST /api/chat/sessions` and related session routes
+  - `POST /api/chat/stream`
+  - `GET,POST /api/chat/sessions`
+  - `GET /api/chat/sessions/:id/messages`
   - `GET /api/prompts/active`
 
 ## Notes
-- Images are never persisted; chat endpoint will accept small images and forward to the LLM (to be implemented).
-- RLS policies restrict all data to the authenticated user (Supabase Auth).
-- Next steps: wire Supabase client in API routes, implement tool handlers, and integrate LLM streaming.
+- Images are never persisted; uploaded images are forwarded to the LLM request only.
+- Supabase Auth/RLS has been replaced by app-owned auth and query-level user scoping.
+- The old `supabase/` directory is retained as migration history.

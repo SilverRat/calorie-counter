@@ -1,11 +1,8 @@
-import { NextResponse } from 'next/server'
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { clearSession } from '@/lib/session'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 export async function POST() {
-  const supabase = getSupabaseServer()
-  await supabase.auth.signOut()
-  return NextResponse.json({ signedOut: true })
+  await clearSession()
+  return Response.json({ signedOut: true })
 }
-

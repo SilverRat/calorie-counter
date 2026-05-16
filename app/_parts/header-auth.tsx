@@ -1,22 +1,20 @@
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { clearSession, getCurrentUser } from '@/lib/session'
+import { redirect } from 'next/navigation'
 
 export default async function HeaderAuth() {
-  const supabase = getSupabaseServer()
-  const { data } = await supabase.auth.getUser()
-  const email = data.user?.email
+  const user = await getCurrentUser()
   async function signOut() {
     'use server'
-    const supa = getSupabaseServer()
-    await supa.auth.signOut()
+    await clearSession()
+    redirect('/login')
   }
   return (
     <div>
-      {email ? (
-        <form action={signOut}><button type="submit">Sign out ({email})</button></form>
+      {user ? (
+        <form action={signOut}><button type="submit">Sign out ({user.email})</button></form>
       ) : (
         <a href="/login">Sign in</a>
       )}
     </div>
   )
 }
-

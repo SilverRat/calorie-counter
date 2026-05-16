@@ -1,63 +1,63 @@
 "use client";
-import { Auth } from '@supabase/auth-ui-react'
-import { ThemeSupa } from '@supabase/auth-ui-shared'
-import { getSupabaseBrowser } from '@/lib/supabaseBrowser'
-import { useEffect, useState } from 'react'
+
+import { FormEvent, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import styles from './page.module.scss'
 
+type Mode = 'signin' | 'signup'
+
 export default function LoginPage() {
-  const [supabase] = useState<ReturnType<typeof getSupabaseBrowser> | null>(() => {
-    if (typeof window === 'undefined') return null
-    try {
-      return getSupabaseBrowser()
-    } catch (err) {
-      console.error(err)
-      return null
-    }
-  })
   const router = useRouter()
-  const [ready, setReady] = useState(false)
+  const [mode, setMode] = useState<Mode>('signin')
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
 
-  useEffect(() => {
-    if (!supabase) return
-    let active = true
+  async function submit(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault()
+    setError('')
+    setPending(true)
+    const form = new FormData(e.currentTarget)
+    const res = await fetch(`/api/auth/${mode}`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        email: form.get('email'),
+        password: form.get('password')
+      })
+    }).catch(() => null)
+    setPending(false)
 
-    // Clear any stale session on page load to avoid accidental auto-login
-    supabase.auth.signOut().finally(async () => {
-      if (!active) return
-      const { data } = await supabase.auth.getSession()
-      if (data.session) router.replace('/chat')
-      setReady(true)
-    })
-
-    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        router.replace('/chat')
-      }
-    })
-
-    return () => {
-      active = false
-      listener?.subscription.unsubscribe()
+    if (!res?.ok) {
+      const body = await res?.json().catch(() => null)
+      setError(body?.error || 'Sign in failed')
+      return
     }
-  }, [router, supabase])
+
+    router.replace('/chat')
+    router.refresh()
+  }
 
   return (
     <section className={styles.wrap}>
-      <h1>Sign in</h1>
-      {supabase && ready ? (
-        <Auth
-          supabaseClient={supabase}
-          appearance={{ theme: ThemeSupa }}
-          providers={[]}
-          onlyThirdPartyProviders={false}
-          showLinks={true}
-        />
-      ) : (
-        <p className={styles.muted}>Preparing sign-in…</p>
-      )}
-      <p style={{ marginTop: 12 }}>After signing in, you will be redirected to <a href="/chat">Chat</a>.</p>
+      <h1>{mode === 'signin' ? 'Sign in' : 'Create account'}</h1>
+      <form onSubmit={submit} style={{ display: 'grid', gap: 12, maxWidth: 420 }}>
+        <label>
+          Email
+          <input name="email" type="email" required autoComplete="email" />
+        </label>
+        <label>
+          Password
+          <input name="password" type="password" required minLength={8} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} />
+        </label>
+        {error ? <p className={styles.muted} role="alert">{error}</p> : null}
+        <button type="submit" disabled={pending}>{pending ? 'Working...' : mode === 'signin' ? 'Sign in' : 'Create account'}</button>
+      </form>
+      <p style={{ marginTop: 12 }}>
+        {mode === 'signin' ? 'Need an account?' : 'Already have an account?'}{' '}
+        <button type="button" onClick={() => setMode(mode === 'signin' ? 'signup' : 'signin')}>
+          {mode === 'signin' ? 'Create one' : 'Sign in'}
+        </button>
+      </p>
     </section>
   )
 }

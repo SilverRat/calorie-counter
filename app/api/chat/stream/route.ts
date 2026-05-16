@@ -1,8 +1,9 @@
 import { NextRequest } from 'next/server'
-import { getSupabaseServer } from '@/lib/supabaseServer'
+import { execute, jsonParam, mysqlDate, query, uuid, type DbRow } from '@/lib/mysql'
+import { getCurrentUser } from '@/lib/session'
 import { addEntrySchema, rangeSchema, updateEntryToolSchema } from '@/lib/validation'
 
-export const runtime = 'edge'
+export const runtime = 'nodejs'
 
 function sse(send: (event: string, data: unknown) => void) {
   return {
@@ -84,10 +85,23 @@ function deriveMacrosIfMissing(calories: number, itemName: string, macros: { pro
   return { protein: P, carbs: Math.max(0, C), fat: F }
 }
 
-async function getActivePrompt(supabase: ReturnType<typeof getSupabaseServer>) {
-  const { data, error } = await supabase.from('prompts').select('*').eq('is_active', true).limit(1).maybeSingle()
-  if (error) throw new Error(error.message)
-  return data
+interface PromptRow extends DbRow {
+  system_text: string
+  metadata_json: any
+}
+
+interface MessageRow extends DbRow {
+  id: string
+  role: string
+  content: string
+  created_at: Date
+}
+
+async function getActivePrompt() {
+  const rows = await query<PromptRow[]>('select * from prompts where is_active = true limit 1')
+  const prompt = rows[0]
+  if (prompt && typeof prompt.metadata_json === 'string') prompt.metadata_json = JSON.parse(prompt.metadata_json)
+  return prompt
 }
 
 function fillPrompt(system_text: string, vars: Record<string, string | number | boolean>) {
@@ -184,9 +198,7 @@ export async function POST(req: NextRequest) {
       }
       const out = sse(send)
       try {
-        const supabase = getSupabaseServer()
-        const { data: userData } = await supabase.auth.getUser()
-        const user = userData.user
+        const user = await getCurrentUser()
         if (!user) { out.error('unauthorized', 'Sign in required'); controller.close(); return }
 
         const form = await req.formData().catch(() => null)
@@ -205,36 +217,35 @@ export async function POST(req: NextRequest) {
         // Ensure/resolve session
         let sessionId: string | null = null
         if (payload.session_id) {
-          const { data: srow } = await supabase.from('chat_sessions').select('id').eq('id', payload.session_id).eq('user_id', user.id).maybeSingle()
-          if (srow?.id) sessionId = srow.id
+          const rows = await query<DbRow[]>('select id from chat_sessions where id = ? and user_id = ? limit 1', [payload.session_id, user.id])
+          if (rows[0]?.id) sessionId = rows[0].id
         }
         if (!sessionId) {
           const title = (text || 'New chat').slice(0, 80)
-          const { data: created, error: cErr } = await supabase.from('chat_sessions').insert({ user_id: user.id, title }).select('id').single()
-          if (cErr) throw new Error(cErr.message)
-          sessionId = created.id
+          sessionId = uuid()
+          await execute('insert into chat_sessions (id, user_id, title) values (?, ?, ?)', [sessionId, user.id, title])
         }
 
         // Persist user message
-        const { data: umsg, error: umErr } = await supabase.from('chat_messages').insert({
-          session_id: sessionId,
-          user_id: user.id,
-          role: 'user',
-          content: text || '',
-          has_image: files.length > 0
-        }).select('id, created_at').single()
-        if (umErr) throw new Error(umErr.message)
+        const userMessageId = uuid()
+        await execute(
+          'insert into chat_messages (id, session_id, user_id, role, content, has_image) values (?, ?, ?, ?, ?, ?)',
+          [userMessageId, sessionId, user.id, 'user', text || '', files.length > 0]
+        )
+        const [umsg] = await query<MessageRow[]>('select id, created_at from chat_messages where id = ? limit 1', [userMessageId])
 
         // Fetch brief history (prior to this user message) to maintain context for confirmations
-        const { data: historyRows } = await supabase.from('chat_messages')
-          .select('role, content, created_at')
-          .eq('session_id', sessionId)
-          .lt('created_at', umsg.created_at)
-          .order('created_at', { ascending: true })
-          .limit(20)
+        const historyRows = await query<MessageRow[]>(
+          `select role, content, created_at
+           from chat_messages
+           where session_id = ? and created_at < ?
+           order by created_at asc
+           limit 20`,
+          [sessionId, umsg.created_at]
+        )
 
         // Build system prompt
-        const activePrompt = await getActivePrompt(supabase)
+        const activePrompt = await getActivePrompt()
         const nowUtc = new Date()
         const tzName = (payload?.context?.timezone || '') as string
         // Compute a YYYY-MM-DD string in the user's timezone (best-effort)
@@ -342,36 +353,62 @@ export async function POST(req: NextRequest) {
                   fat: parsed.data.fat
                 })
                 const row = { ...parsed.data, ...withMacros, occurred_at: occurredAtISO, user_id: user.id, source: files.length ? 'llm_image' : 'llm_text' }
-                const { data: ins, error: iErr } = await supabase.from('food_entries').insert([row]).select('id').single()
-                result = iErr ? { error: iErr.message } : { id: ins?.id, occurred_at: occurredAtISO, meal_type: row.meal_type, item_name: row.item_name, calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat }
+                const entryId = uuid()
+                await execute(
+                  `insert into food_entries
+                    (id, user_id, occurred_at, meal_type, item_name, calories, protein, carbs, fat, source, confidence, notes)
+                   values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                  [entryId, user.id, mysqlDate(row.occurred_at), row.meal_type, row.item_name, row.calories, row.protein, row.carbs, row.fat, row.source, row.confidence ?? null, row.notes ?? null]
+                )
+                result = { id: entryId, occurred_at: occurredAtISO, meal_type: row.meal_type, item_name: row.item_name, calories: row.calories, protein: row.protein, carbs: row.carbs, fat: row.fat }
                 // Persist tool message
-                await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'tool', content: '', tool_name: name, tool_args_json: parsed.data, tool_result_json: result })
+                await execute(
+                  'insert into chat_messages (id, session_id, user_id, role, content, tool_name, tool_args_json, tool_result_json) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                  [uuid(), sessionId, user.id, 'tool', '', name, jsonParam(parsed.data), jsonParam(result)]
+                )
               }
             } else if (name === 'update_food_entry') {
               const parsed = updateEntryToolSchema.safeParse(args)
               if (!parsed.success) { result = { error: 'invalid_args', details: parsed.error.flatten() } }
               else {
-                const { error: uErr } = await supabase.from('food_entries').update(parsed.data.fields).eq('id', parsed.data.id).eq('user_id', user.id)
-                result = uErr ? { error: uErr.message } : { updated: true }
-                await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'tool', content: '', tool_name: name, tool_args_json: parsed.data, tool_result_json: result })
+                const sets: string[] = []
+                const params: unknown[] = []
+                for (const [key, value] of Object.entries(parsed.data.fields)) {
+                  sets.push(`${key} = ?`)
+                  params.push(key === 'occurred_at' && typeof value === 'string' ? mysqlDate(value) : value)
+                }
+                params.push(parsed.data.id, user.id)
+                await execute(`update food_entries set ${sets.join(', ')} where id = ? and user_id = ?`, params)
+                result = { updated: true }
+                await execute(
+                  'insert into chat_messages (id, session_id, user_id, role, content, tool_name, tool_args_json, tool_result_json) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                  [uuid(), sessionId, user.id, 'tool', '', name, jsonParam(parsed.data), jsonParam(result)]
+                )
               }
             } else if (name === 'list_entries') {
               const parsed = rangeSchema.safeParse(args)
               if (!parsed.success) { result = { error: 'invalid_args', details: parsed.error.flatten() } }
               else {
-                let q = supabase.from('food_entries').select('*').eq('user_id', user.id).order('occurred_at', { ascending: false })
-                if (parsed.data.from) q = q.gte('occurred_at', parsed.data.from)
-                if (parsed.data.to) q = q.lte('occurred_at', parsed.data.to)
-                const { data: rows, error: qErr } = await q
-                result = qErr ? { error: qErr.message } : { entries: rows }
-                await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'tool', content: '', tool_name: name, tool_args_json: parsed.data, tool_result_json: result })
+                const where = ['user_id = ?']
+                const params: unknown[] = [user.id]
+                if (parsed.data.from) { where.push('occurred_at >= ?'); params.push(mysqlDate(parsed.data.from)) }
+                if (parsed.data.to) { where.push('occurred_at <= ?'); params.push(mysqlDate(parsed.data.to)) }
+                const rows = await query<DbRow[]>(`select * from food_entries where ${where.join(' and ')} order by occurred_at desc`, params)
+                result = { entries: rows.map((row: any) => ({ ...row, occurred_at: new Date(row.occurred_at).toISOString(), created_at: new Date(row.created_at).toISOString(), updated_at: new Date(row.updated_at).toISOString() })) }
+                await execute(
+                  'insert into chat_messages (id, session_id, user_id, role, content, tool_name, tool_args_json, tool_result_json) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                  [uuid(), sessionId, user.id, 'tool', '', name, jsonParam(parsed.data), jsonParam(result)]
+                )
               }
             } else if (name === 'delete_food_entry') {
               if (!args?.id) { result = { error: 'invalid_args' } }
               else {
-                const { error: dErr } = await supabase.from('food_entries').delete().eq('id', args.id).eq('user_id', user.id)
-                result = dErr ? { error: dErr.message } : { deleted: true }
-                await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'tool', content: '', tool_name: name, tool_args_json: args, tool_result_json: result })
+                await execute('delete from food_entries where id = ? and user_id = ?', [args.id, user.id])
+                result = { deleted: true }
+                await execute(
+                  'insert into chat_messages (id, session_id, user_id, role, content, tool_name, tool_args_json, tool_result_json) values (?, ?, ?, ?, ?, ?, ?, ?)',
+                  [uuid(), sessionId, user.id, 'tool', '', name, jsonParam(args), jsonParam(result)]
+                )
               }
             } else {
               result = { error: 'unknown_tool' }
@@ -392,10 +429,14 @@ export async function POST(req: NextRequest) {
         }
 
         // Persist assistant message
-        const { data: amsg, error: amErr } = await supabase.from('chat_messages').insert({ session_id: sessionId, user_id: user.id, role: 'assistant', content: finalAssistantText }).select('id, created_at').single()
-        if (amErr) throw new Error(amErr.message)
+        const assistantMessageId = uuid()
+        await execute(
+          'insert into chat_messages (id, session_id, user_id, role, content) values (?, ?, ?, ?, ?)',
+          [assistantMessageId, sessionId, user.id, 'assistant', finalAssistantText]
+        )
+        const [amsg] = await query<MessageRow[]>('select id, created_at from chat_messages where id = ? limit 1', [assistantMessageId])
 
-        out.message({ id: amsg.id, session_id: sessionId, role: 'assistant', content: finalAssistantText, created_at: amsg.created_at })
+        out.message({ id: amsg.id, session_id: sessionId, role: 'assistant', content: finalAssistantText, created_at: new Date(amsg.created_at).toISOString() })
         out.done({ finish_reason: 'stop' })
         controller.close()
       } catch (e: any) {
