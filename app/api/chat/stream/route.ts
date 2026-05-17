@@ -188,6 +188,12 @@ function openAiToolSchemas() {
   ]
 }
 
+function shouldAllowTools(text: string, hasFiles: boolean) {
+  const value = text.toLowerCase()
+  if (hasFiles && /\b(save|log|add|record|confirm|yes|ok|okay)\b/.test(value)) return true
+  return /\b(save|log|add|record|ate|had|delete|remove|update|correct|change|edit|list|show|entries|meals?|foods?|today|yesterday|what did i eat|what have i eaten|calories)\b/.test(value)
+}
+
 export async function POST(req: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
@@ -296,7 +302,7 @@ export async function POST(req: NextRequest) {
         // First call: only allow tools when the user explicitly confirms saving
         const tools = openAiToolSchemas()
         const model = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-        const allowTools = /\b(save|log it|add it|record it|confirm(ed)?|looks good|ok(ay)?|yes)\b/i.test(text)
+        const allowTools = shouldAllowTools(text, files.length > 0)
         const r1 = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -315,6 +321,7 @@ export async function POST(req: NextRequest) {
         // Handle tool call if any
         let finalAssistantText = ''
         if (m1?.tool_calls && Array.isArray(m1.tool_calls) && m1.tool_calls.length > 0) {
+          const toolMessages: any[] = []
           for (const tc of m1.tool_calls) {
             const name = tc.function?.name
             let args: any = {}
@@ -414,10 +421,15 @@ export async function POST(req: NextRequest) {
               result = { error: 'unknown_tool' }
             }
             out.toolResult(name, result)
+            toolMessages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              name,
+              content: JSON.stringify(result)
+            })
           }
 
           // Second call with tool results to get final assistant text
-          const toolMessages = (m1.tool_calls as any[]).map(tc => ({ role: 'tool', tool_call_id: tc.id, name: tc.function?.name, content: 'OK' }))
           const r2 = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST', headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ model, messages: [...messages, m1, ...toolMessages] })
